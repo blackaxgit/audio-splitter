@@ -123,6 +123,20 @@ Optional parameters can be added as additional Form Data fields:
 
 The response contains an array of chunks with base64-encoded audio data that can be processed by subsequent nodes in your workflow.
 
+### Example Workflow
+
+An example n8n workflow is available in `n8n-test-flow/audio-splitter-workflow.json`. Import it into your n8n instance to get started quickly.
+
+![n8n Workflow](n8n-test-flow/workflow-screenshot.png)
+
+The workflow includes:
+- Form trigger for file upload
+- HTTP Request configured for the splitter service
+- Code node to parse streaming response into binary items
+- Loop node to process each chunk
+
+**Note:** After importing, update the URL in the HTTP Request node to match your deployment (e.g., `http://localhost:8000/split` or your Kubernetes service URL).
+
 ## License
 
 GNU Affero General Public License v3 (AGPL-3.0)
