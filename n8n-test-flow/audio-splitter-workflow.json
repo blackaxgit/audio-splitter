@@ -1,0 +1,171 @@
+{
+  "name": "test",
+  "nodes": [
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8000/split",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "File"
+            },
+            {
+              "name": "chunk_size_mb",
+              "value": "5"
+            },
+            {
+              "name": "response_mode",
+              "value": "stream"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -528,
+        1824
+      ],
+      "id": "782cc6b9-4547-4e81-9853-016c97ac83c5",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = [];\nconst input = $input.first().json;\n\n// Split by newlines to get individual JSON objects\nconst lines = input.data.split('\\n').filter(line => line.trim().length > 0);\n\nconsole.log(`Found ${lines.length} JSON objects to parse`);\n\nfor (let i = 0; i < lines.length; i++) {\n  let chunk;\n  try {\n    chunk = JSON.parse(lines[i]);\n  } catch (error) {\n    console.error(`Failed to parse line ${i}:`, error.message);\n    console.error(`Line content:`, lines[i].substring(0, 200));\n    continue;\n  }\n  \n  // Validate structure\n  if (!chunk.binary || !chunk.binary.data || !chunk.binary.data.data) {\n    console.error(`Chunk ${i} missing binary data structure`);\n    continue;\n  }\n  \n  const binaryInfo = chunk.binary.data;\n  const jsonInfo = chunk.json;\n  \n  console.log(`Processing chunk ${i}: ${jsonInfo.filename}`);\n  \n  items.push({\n    json: {\n      index: i,\n      filename: jsonInfo.filename,\n      fileExtension: jsonInfo.fileExtension,\n      mimeType: jsonInfo.mimeType,\n      size: jsonInfo.size,\n      sizeInMB: jsonInfo.sizeInMB,\n      originalFile: jsonInfo.originalFile,\n      duration: jsonInfo.duration\n    },\n    binary: {\n      data: await this.helpers.prepareBinaryData(\n        Buffer.from(binaryInfo.data, 'base64'),\n        jsonInfo.filename,\n        jsonInfo.mimeType\n      )\n    }\n  });\n}\n\nconsole.log(`Successfully created ${items.length} items with binary data`);\n\nif (items.length === 0) {\n  throw new Error('No valid chunks were processed. Check console logs for details.');\n}\n\nreturn items;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -304,
+        1824
+      ],
+      "id": "0902f6de-2928-4090-856b-316cc5417afd",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -96,
+        1824
+      ],
+      "id": "0aca3b80-039f-44a9-a4bf-851b76e6ecd6",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "name": "Replace Me",
+      "typeVersion": 1,
+      "position": [
+        112,
+        2032
+      ],
+      "id": "d77a4193-7fb0-4f96-9017-3b30b0bfed3f"
+    },
+    {
+      "parameters": {
+        "formTitle": "audio splitter",
+        "formFields": {
+          "values": [
+            {
+              "fieldName": "File",
+              "fieldLabel": "File",
+              "fieldType": "file",
+              "multipleFiles": false
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.4,
+      "position": [
+        -752,
+        1824
+      ],
+      "id": "60845d10-909a-441d-a30d-30b7a233ac55",
+      "name": "On form submission",
+      "webhookId": "1e5c8594-6fc6-46e1-a68a-bf40fa2d319e"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Replace Me",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Replace Me": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "On form submission": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "versionId": "0cf7b482-102f-4990-b649-1f1c250f899d",
+  "meta": {
+    "instanceId": "526bb0583d03366d21813bcce94296026e0ad978d1878b2dd83738fa633176ab"
+  },
+  "id": "n17CGZPh2T4EL80uhSk25",
+  "tags": []
+}
