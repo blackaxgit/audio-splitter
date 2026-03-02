@@ -2,7 +2,9 @@ FROM python:3.13-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 1000 appuser \
+    && useradd --uid 1000 --gid 1000 --no-create-home appuser
 
 WORKDIR /app
 
@@ -13,7 +15,11 @@ COPY app/ ./app/
 
 ENV PYTHONUNBUFFERED=1
 ENV MAX_FILE_SIZE_MB=500
-ENV STREAMING_THRESHOLD_MB=100
+
+USER appuser
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
 
 EXPOSE 8000
 

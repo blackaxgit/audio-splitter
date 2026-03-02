@@ -11,7 +11,7 @@ fullnameOverride: ""
 
 serviceAccount:
   create: true
-  automount: true
+  automount: false
   annotations: {}
   name: ""
 
@@ -29,13 +29,14 @@ securityContext:
   capabilities:
     drop:
       - ALL
-  readOnlyRootFilesystem: false
+  readOnlyRootFilesystem: true
 
 service:
   type: ClusterIP
   port: 80
   targetPort: 8000
 
+# WARNING: Configure TLS before enabling ingress in production
 ingress:
   enabled: false
   className: ""
@@ -82,13 +83,15 @@ autoscaling:
 
 env:
   MAX_FILE_SIZE_MB: "500"
-  STREAMING_THRESHOLD_MB: "100"
 
 nodeSelector: {}
 
 tolerations: []
 
 affinity: {}
+
+networkPolicy:
+  enabled: true
 
 persistence:
   enabled: false

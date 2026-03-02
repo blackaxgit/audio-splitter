@@ -1,35 +1,73 @@
-# Audio Splitter Service
+# Audio Splitter
 
-A FastAPI-based microservice that splits audio files into smaller chunks using FFmpeg. Designed for containerized deployment with Docker and Kubernetes (Helm).
+[![License: MPL 2.0](https://img.shields.io/badge/License-MPL_2.0-brightgreen.svg)](https://opensource.org/licenses/MPL-2.0)
+[![Python](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org/downloads/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115.6-009688.svg)](https://fastapi.tiangolo.com)
 
-Perfect for integration with [n8n](https://n8n.io/) workflows - use the HTTP Request node to send audio files and receive chunked results for further processing in your automation pipelines.
+A FastAPI-based HTTP microservice that splits large audio files into smaller chunks using FFmpeg. Designed for integration with workflow automation tools such as n8n, and deployable as a Docker container or Kubernetes workload.
+
+Audio is split without re-encoding — FFmpeg's `-c copy` flag is used throughout, preserving the original quality and making splits fast regardless of file size.
 
 ## Features
 
-- Split audio files into chunks of specified size (MB)
-- Supports multiple audio formats: MP3, WAV, FLAC, OGG, M4A, AAC, WMA, OPUS
-- Configurable memory modes (streaming/buffered/auto)
-- Returns chunks as base64-encoded data with metadata
-- Health and readiness endpoints for Kubernetes
-- Non-root container with security best practices
+- **Lossless splitting** — uses FFmpeg segment muxer with `-c copy`, no quality loss
+- **Smart bitrate detection** — queries actual bitrate via `ffprobe` to calculate accurate segment durations
+- **Memory-aware uploads** — auto, streaming, or buffered mode for handling files of any size
+- **Async throughout** — non-blocking I/O via `asyncio` and `aiofiles`
+- **Format flexible** — supports mp3, wav, flac, ogg, m4a, aac, wma, opus; output format can differ from input
+- **Base64 binary response** — each chunk returned as JSON with metadata and base64-encoded audio data, ready for n8n or any HTTP client
+- **Production-ready deployment** — Docker image with Kubernetes Helm chart including optional HPA, security hardening, NetworkPolicy, and ingress support
 
-## API Endpoints
+## Quick Start
 
-### `POST /split`
+### Docker
 
-Split an audio file into chunks.
+```bash
+docker build -t audio-splitter .
+docker run -p 8000:8000 audio-splitter
+```
 
-**Parameters:**
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
+The service is now available at `http://localhost:8000`.
+
+### Local Development
+
+**Prerequisites:** Python 3.13, FFmpeg installed and on `PATH`.
+
+```bash
+# Create and activate a virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Start the development server
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+## API Reference
+
+### POST /split
+
+Splits an uploaded audio file into chunks of a specified size.
+
+**Content-Type:** `multipart/form-data`
+
+#### Parameters
+
+| Field | Type | Default | Description |
+|---|---|---|---|
 | `file` | file | required | Audio file to split |
-| `chunk_size_mb` | float | 10.0 | Size of each chunk in MB |
-| `output_prefix` | string | "chunk" | Prefix for chunk filenames |
-| `same_as_input` | bool | true | Use same format as input |
-| `output_format` | string | null | Output format (if not same as input) |
-| `memory_mode` | string | "auto" | Memory mode: auto, streaming, buffered |
+| `chunk_size_mb` | float | `10.0` | Target size of each output chunk in MB (min: 0.1, max: 500) |
+| `output_prefix` | string | `chunk` | Filename prefix for generated chunks (alphanumeric, hyphens, underscores only) |
+| `same_as_input` | bool | `true` | Keep the same container format as the input |
+| `output_format` | string | `null` | Override output format (e.g. `mp3`, `wav`); only used when `same_as_input` is `false` |
+| `memory_mode` | string | `auto` | Upload strategy: `auto`, `streaming`, or `buffered` |
 
-**Response:**
+#### Response
+
+Returns a JSON array. Each element represents one chunk. The `duration` field is the duration of the **original** file in seconds, not the individual chunk.
+
 ```json
 [
   {
@@ -37,106 +75,157 @@ Split an audio file into chunks.
       "filename": "chunk_000.mp3",
       "fileExtension": "mp3",
       "mimeType": "audio/mpeg",
-      "size": 10485760,
-      "sizeInMB": 10.0,
-      "originalFile": "song.mp3",
-      "duration": 180.5
+      "size": 5242880,
+      "sizeInMB": 5.0,
+      "originalFile": "recording.mp3",
+      "duration": 3600.0
     },
-    "binary": "base64-encoded-audio-data..."
+    "binary": "<base64-encoded audio data>"
   }
 ]
 ```
 
-### `GET /health`
+#### Error Responses
 
-Health check endpoint. Returns `{"status": "healthy"}`.
+| Status | Condition |
+|---|---|
+| `400` | Unsupported file format, invalid `chunk_size_mb` range, invalid `output_format`, or too many chunks generated |
+| `413` | File exceeds `MAX_FILE_SIZE_MB` |
+| `422` | FFmpeg failed to process the audio |
+| `500` | Unexpected server error |
 
-### `GET /ready`
-
-Readiness check. Verifies FFmpeg is available.
-
-## Quick Start
-
-### Using Docker
-
-```bash
-docker build -t audio-splitter .
-docker run -p 8000:8000 audio-splitter
+Error bodies include a correlation ID for debugging:
+```json
+{"detail": "Audio processing failed. Reference: a1b2c3d4-..."}
 ```
 
-### Using Docker Compose
+#### Example
 
 ```bash
-docker compose up
+curl -X POST http://localhost:8000/split \
+  -F "file=@recording.mp3" \
+  -F "chunk_size_mb=5" \
+  -F "output_prefix=part" \
+  -F "same_as_input=true" \
+  -F "memory_mode=auto"
 ```
+
+---
+
+### GET /health
+
+Returns service health status. Used as a liveness probe in Kubernetes.
+
+**Response:**
+```json
+{"status": "healthy"}
+```
+
+---
+
+### GET /ready
+
+Verifies that FFmpeg is installed and accessible. Used as a readiness probe in Kubernetes.
+
+**Response (200):**
+```json
+{"status": "ready"}
+```
+
+**Response (503):** returned when FFmpeg is not found on `PATH`.
+
+---
 
 ## Configuration
 
-Environment variables:
+Configuration is provided through environment variables.
 
 | Variable | Default | Description |
-|----------|---------|-------------|
-| `MAX_FILE_SIZE_MB` | 500 | Maximum upload file size in MB |
-| `STREAMING_THRESHOLD_MB` | 100 | Threshold for streaming mode in MB |
+|---|---|---|
+| `MAX_FILE_SIZE_MB` | `500` | Maximum accepted upload size in MB |
+| `FFMPEG_TIMEOUT_SECONDS` | `300` | Maximum time in seconds for FFmpeg split operations before killing the process |
+| `FFPROBE_TIMEOUT_SECONDS` | `30` | Maximum time in seconds for ffprobe metadata queries and readiness checks |
+| `CHUNK_SIZE_MB_MIN` | `0.1` | Minimum allowed value for `chunk_size_mb` |
+| `CHUNK_SIZE_MB_MAX` | `500` | Maximum allowed value for `chunk_size_mb` |
+| `MAX_CHUNKS` | `1000` | Maximum number of output chunks per request |
 
-## Kubernetes Deployment
+## Deployment
 
-Deploy using Helm:
+### Docker
 
-```bash
-helm install audio-splitter ./helm/audio-splitter
-```
-
-See `helm/audio-splitter/values.yaml` for configuration options.
-
-## Example Usage
+Build and run the production image:
 
 ```bash
-curl -X POST "http://localhost:8000/split" \
-  -F "file=@song.mp3" \
-  -F "chunk_size_mb=5" \
-  -F "output_prefix=part"
+docker build -t audio-splitter:latest .
+docker run -d \
+  -p 8000:8000 \
+  -e MAX_FILE_SIZE_MB=1000 \
+  -e STREAMING_THRESHOLD_MB=200 \
+  audio-splitter:latest
 ```
+
+### Kubernetes (Helm)
+
+The Helm chart is located in `helm/audio-splitter/`.
+
+**Basic install:**
+
+```bash
+helm install audio-splitter ./helm/audio-splitter \
+  --set image.repository=your-registry/audio-splitter \
+  --set image.tag=latest
+```
+
+**Key `values.yaml` options:**
+
+| Key | Default | Description |
+|---|---|---|
+| `image.repository` | `audio-splitter` | Container image repository |
+| `image.tag` | `""` (uses chart appVersion) | Image tag |
+| `service.type` | `ClusterIP` | Kubernetes service type |
+| `resources.limits.memory` | `2Gi` | Memory limit per pod |
+| `resources.limits.cpu` | `2000m` | CPU limit per pod |
+| `ingress.enabled` | `false` | Enable ingress resource (configure TLS before enabling) |
+| `autoscaling.enabled` | `false` | Enable Horizontal Pod Autoscaler |
+| `persistence.enabled` | `false` | Enable PVC for temporary file storage |
+| `networkPolicy.enabled` | `true` | Restrict pod ingress/egress with a NetworkPolicy |
+| `securityContext.readOnlyRootFilesystem` | `true` | Mount root filesystem as read-only |
+| `serviceAccount.automount` | `false` | Auto-mount Kubernetes API token |
+| `replicaCount` | `1` | Number of pod replicas |
+
+The chart includes:
+- Horizontal Pod Autoscaler (HPA, disabled by default)
+- Persistent Volume Claim (PVC, disabled by default)
+- NetworkPolicy restricting traffic to port 8000 ingress and DNS egress
+- Pod security context (`runAsNonRoot`, `readOnlyRootFilesystem`, dropped capabilities)
+- Liveness and readiness probes wired to `/health` and `/ready`
 
 ## n8n Integration
 
-To use this service in an n8n workflow, add an **HTTP Request** node with the following configuration:
+An example n8n workflow is provided in `n8n-test-flow/audio-splitter-workflow.json`. The flow demonstrates a complete pipeline:
 
-1. **Method:** `POST`
-2. **URL:** Your service endpoint with `/split` path
-3. **Authentication:** None (or configure as needed)
-4. **Send Body:** Enabled
-5. **Body Content Type:** `Form-Data`
+1. **Form Trigger** — accepts an audio file upload via a web form
+2. **HTTP Request** — posts the file to `POST /split` on this service
+3. **Code (JavaScript)** — parses the JSON response array and decodes base64 binary data into n8n binary items
+4. **Loop Over Items** — iterates over each chunk for downstream processing
 
-**Body Parameters:**
+To use the example flow:
 
-| Parameter Type | Name | Value |
-|----------------|------|-------|
-| n8n Binary File | `file` | Select the binary field from a previous node |
-| Form Data | `chunk_size_mb` | Desired chunk size (e.g., `5`) |
+1. Import `n8n-test-flow/audio-splitter-workflow.json` into your n8n instance via **Workflows > Import from file**
+2. Update the HTTP Request node URL to point to your deployed Audio Splitter service
+3. Replace the **Replace Me** node with your desired action (e.g. upload to S3, send via email, store in Google Drive)
 
-Optional parameters can be added as additional Form Data fields:
-- `output_prefix` - Prefix for output filenames
-- `same_as_input` - Keep original format (`true`/`false`)
-- `output_format` - Target format if converting
-- `memory_mode` - Processing mode (`auto`, `streaming`, `buffered`)
+## Contributing
 
-The response contains an array of chunks with base64-encoded audio data that can be processed by subsequent nodes in your workflow.
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feat/my-feature`
+3. Commit your changes following the conventional commits format: `feat(scope): description`
+4. Open a pull request against `main`
 
-### Example Workflow
-
-An example n8n workflow is available in `n8n-test-flow/audio-splitter-workflow.json`. Import it into your n8n instance to get started quickly.
-
-![n8n Workflow](n8n-test-flow/workflow-screenshot.png)
-
-The workflow includes:
-- Form trigger for file upload
-- HTTP Request configured for the splitter service
-- Code node to parse streaming response into binary items
-- Loop node to process each chunk
-
-**Note:** After importing, update the URL in the HTTP Request node to match your deployment (e.g., `http://localhost:8000/split` or your Kubernetes service URL).
+Bug reports and feature requests are welcome via [GitHub Issues](https://github.com/blackaxgit/audio-splitter/issues).
 
 ## License
 
-GNU Affero General Public License v3 (AGPL-3.0)
+This project is licensed under the [Mozilla Public License 2.0](LICENSE).
+
+Under MPL-2.0, you may use, modify, and distribute this software. Modifications to MPL-licensed files must be released under the same license, but you may combine this code with files under other licenses in a larger work without those files being affected.
