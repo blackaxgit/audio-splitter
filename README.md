@@ -2,7 +2,7 @@
 
 [![License: MPL 2.0](https://img.shields.io/badge/License-MPL_2.0-brightgreen.svg)](https://opensource.org/licenses/MPL-2.0)
 [![Python](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org/downloads/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.115.6-009688.svg)](https://fastapi.tiangolo.com)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.142.2-009688.svg)](https://fastapi.tiangolo.com)
 
 A FastAPI-based HTTP microservice that splits large audio files into smaller chunks using FFmpeg. Designed for integration with workflow automation tools such as n8n, and deployable as a Docker container or Kubernetes workload.
 
@@ -14,7 +14,7 @@ Audio is split without re-encoding — FFmpeg's `-c copy` flag is used throughou
 - **Smart bitrate detection** — queries actual bitrate via `ffprobe` to calculate accurate segment durations
 - **Memory-aware uploads** — auto, streaming, or buffered mode for handling files of any size
 - **Async throughout** — non-blocking I/O via `asyncio` and `aiofiles`
-- **Format flexible** — supports mp3, wav, flac, ogg, m4a, aac, wma, opus; output format can differ from input
+- **Format flexible** — supports mp3, wav, flac, ogg, m4a, aac, wma, opus; the output container can differ from the input if it supports the input codec (audio is copied, never re-encoded)
 - **Base64 binary response** — each chunk returned as JSON with metadata and base64-encoded audio data, ready for n8n or any HTTP client
 - **Production-ready deployment** — Docker image with Kubernetes Helm chart including optional HPA, security hardening, NetworkPolicy, and ingress support
 
@@ -61,8 +61,8 @@ Splits an uploaded audio file into chunks of a specified size.
 | `chunk_size_mb` | float | `10.0` | Target size of each output chunk in MB (min: 0.1, max: 500) |
 | `output_prefix` | string | `chunk` | Filename prefix for generated chunks (alphanumeric, hyphens, underscores only) |
 | `same_as_input` | bool | `true` | Keep the same container format as the input |
-| `output_format` | string | `null` | Override output format (e.g. `mp3`, `wav`); only used when `same_as_input` is `false` |
-| `memory_mode` | string | `auto` | Upload strategy: `auto`, `streaming`, or `buffered` |
+| `output_format` | string | `null` | Output container (e.g. `m4a` for AAC input, `ogg` for Opus input). Audio is copied, not re-encoded, so the container must support the input codec, otherwise the request fails with `500`. Only used when `same_as_input` is `false` |
+| `memory_mode` | string | `auto` | Upload strategy: `auto` (same as `streaming`), `streaming` (writes the upload to disk in 1 MB chunks), or `buffered` (reads it into memory) |
 
 #### Response
 
@@ -91,10 +91,10 @@ Returns a JSON array. Each element represents one chunk. The `duration` field is
 |---|---|
 | `400` | Unsupported file format, invalid `chunk_size_mb` range, invalid `output_format`, or too many chunks generated |
 | `413` | File exceeds `MAX_FILE_SIZE_MB` |
-| `422` | FFmpeg failed to process the audio |
-| `500` | Unexpected server error |
+| `422` | Request validation error (e.g. non-numeric `chunk_size_mb`, unknown `memory_mode`, missing `file`); `detail` is a list of field errors |
+| `500` | FFmpeg could not process the audio (corrupt input, or `output_format` incompatible with the input codec), processing timed out (`FFMPEG_TIMEOUT_SECONDS`), or unexpected server error |
 
-Error bodies include a correlation ID for debugging:
+Processing errors (`500`) include a correlation ID that matches the server log entry:
 ```json
 {"detail": "Audio processing failed. Reference: a1b2c3d4-..."}
 ```
@@ -160,7 +160,6 @@ docker build -t audio-splitter:latest .
 docker run -d \
   -p 8000:8000 \
   -e MAX_FILE_SIZE_MB=1000 \
-  -e STREAMING_THRESHOLD_MB=200 \
   audio-splitter:latest
 ```
 
@@ -187,7 +186,7 @@ helm install audio-splitter ./helm/audio-splitter \
 | `resources.limits.cpu` | `2000m` | CPU limit per pod |
 | `ingress.enabled` | `false` | Enable ingress resource (configure TLS before enabling) |
 | `autoscaling.enabled` | `false` | Enable Horizontal Pod Autoscaler |
-| `persistence.enabled` | `false` | Enable PVC for temporary file storage |
+| `persistence.enabled` | `false` | Mount a PVC at `persistence.mountPath` and use it as `TMPDIR` for uploads and chunks |
 | `networkPolicy.enabled` | `true` | Restrict pod ingress/egress with a NetworkPolicy |
 | `securityContext.readOnlyRootFilesystem` | `true` | Mount root filesystem as read-only |
 | `serviceAccount.automount` | `false` | Auto-mount Kubernetes API token |
@@ -208,6 +207,8 @@ An example n8n workflow is provided in `n8n-test-flow/audio-splitter-workflow.js
 2. **HTTP Request** — posts the file to `POST /split` on this service
 3. **Code (JavaScript)** — parses the JSON response array and decodes base64 binary data into n8n binary items
 4. **Loop Over Items** — iterates over each chunk for downstream processing
+
+![n8n workflow](n8n-test-flow/workflow-screenshot.png)
 
 To use the example flow:
 

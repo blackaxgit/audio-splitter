@@ -28,6 +28,7 @@ coverage.xml
 *.swo
 *.swn
 *~
+.claude/
 
 # OS
 .DS_Store
@@ -69,3 +70,13 @@ helm/**/*.override.yml
 docker-compose.override.yml
 docker-compose.*.yml
 !docker-compose.yml
+
+# Audio files (test fixtures)
+*.mp3
+*.wav
+*.flac
+*.ogg
+*.m4a
+*.aac
+*.wma
+*.opus

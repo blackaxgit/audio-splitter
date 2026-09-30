@@ -290,7 +290,7 @@ async def split_audio_endpoint(
 
     output_prefix = sanitize_prefix(output_prefix)
 
-    if chunk_size_mb < CHUNK_SIZE_MB_MIN or chunk_size_mb > CHUNK_SIZE_MB_MAX:
+    if not (CHUNK_SIZE_MB_MIN <= chunk_size_mb <= CHUNK_SIZE_MB_MAX):  # also rejects NaN
         raise HTTPException(
             status_code=400,
             detail=(
