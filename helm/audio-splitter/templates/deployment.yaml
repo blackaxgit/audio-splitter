@@ -51,17 +51,26 @@ spec:
             {{- toYaml .Values.readinessProbe | nindent 12 }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-          {{- if .Values.persistence.enabled }}
           volumeMounts:
+            {{- if .Values.securityContext.readOnlyRootFilesystem }}
+            - name: tmp
+              mountPath: /tmp
+            {{- end }}
+            {{- if .Values.persistence.enabled }}
             - name: tmp-storage
               mountPath: {{ .Values.persistence.mountPath }}
-          {{- end }}
-      {{- if .Values.persistence.enabled }}
+            {{- end }}
       volumes:
+        {{- if .Values.securityContext.readOnlyRootFilesystem }}
+        - name: tmp
+          emptyDir:
+            sizeLimit: 2Gi
+        {{- end }}
+        {{- if .Values.persistence.enabled }}
         - name: tmp-storage
           persistentVolumeClaim:
             claimName: {{ include "audio-splitter.fullname" . }}-pvc
-      {{- end }}
+        {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

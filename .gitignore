@@ -1,55 +1,36 @@
-# Byte-compiled / optimized / DLL files
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
-
-# C extensions
-*.so
-
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
 *.egg-info/
-.installed.cfg
+dist/
+build/
 *.egg
-
-# Virtual environments
 .venv/
 venv/
-ENV/
 env/
-.env/
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
 
-# Environment variables
-.env
-.env.*
-!.env.example
-
-# IDE / Editor
+# IDE
 .idea/
 .vscode/
-.claude/
 *.swp
 *.swo
+*.swn
 *~
-.project
-.pydevproject
-.settings/
 
-# OS files
+# OS
 .DS_Store
-.DS_Store?
 .DS_Store?
 ._*
 .Spotlight-V100
@@ -61,30 +42,30 @@ Thumbs.db
 logs/
 *.log
 
-# Testing
-.coverage
-.pytest_cache/
-htmlcov/
-.tox/
-.nox/
+# Environment
+.env
+.env.*
+!.env.example
 
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# Temporary files
+# Temp / scratch
+*.tmp
+*.bak
+*.orig
 tmp/
 temp/
-*.tmp
-*.temp
 
-# Audio files (test files)
-*.mp3
-*.wav
-*.flac
-*.ogg
-*.m4a
-*.aac
-*.wma
-*.opus
+# Docker
+.dockerignore.local
+
+# Helm
+helm/**/.DS_Store
+# Helm values overrides (may contain secrets)
+helm/**/*.override.yaml
+helm/**/*.override.yml
+**/values.secret.yaml
+**/values.local.yaml
+
+# Docker overrides
+docker-compose.override.yml
+docker-compose.*.yml
+!docker-compose.yml
