@@ -27,6 +27,7 @@ jobs:
             -p 8000:8000 audio-splitter:ci
 
       - name: Smoke test
+        shell: bash  # -eo pipefail: a failing curl fails the step, not just the assert
         run: |
           for _ in $(seq 30); do curl -sf localhost:8000/health && break; sleep 1; done
           curl -sS --fail-with-body localhost:8000/ready
