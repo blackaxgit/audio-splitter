@@ -223,7 +223,7 @@ To use the example flow:
 3. Commit your changes following the conventional commits format: `feat(scope): description`
 4. Open a pull request against `main`
 
-Bug reports and feature requests are welcome via [GitHub Issues](https://github.com/blackaxgit/audio-splitter/issues).
+Bug reports and feature requests are welcome via [GitHub Issues](https://github.com/blackaxgit/audio-splitter/issues). Do not report security vulnerabilities in public issues; see [SECURITY.md](SECURITY.md).
 
 ## License
 
