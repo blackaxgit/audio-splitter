@@ -95,7 +95,7 @@ async def get_audio_bitrate(file_path: str) -> int:
     """Get audio bitrate using ffprobe, default to 320kbps if not found."""
     stdout = await ffprobe_format(file_path, "bit_rate", "bitrate")
     try:
-        return int(stdout.decode().strip()) // 1000 or 320  # <1 kbps would divide by zero
+        return int(stdout.decode().strip()) // 1000
     except ValueError:
         return 320
 
@@ -110,6 +110,11 @@ async def split_audio(
 ) -> list[str]:
     """Split audio file using FFmpeg segment muxer."""
     bitrate = await get_audio_bitrate(input_path)
+    if bitrate < 1:  # no real audio is under 1 kbps; segmenting would divide by zero
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported audio: bitrate is below 1 kbps"
+        )
     segment_time = calculate_segment_time(chunk_size_mb, bitrate)
 
     output_pattern = os.path.join(output_dir, f"{output_prefix}_%03d{output_ext}")

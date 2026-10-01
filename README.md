@@ -89,7 +89,7 @@ Returns a JSON array. Each element represents one chunk. The `duration` field is
 
 | Status | Condition |
 |---|---|
-| `400` | Unsupported file format, invalid `chunk_size_mb` range, invalid `output_format`, or too many chunks generated |
+| `400` | Unsupported file format, invalid `chunk_size_mb` range, invalid `output_format`, audio bitrate below 1 kbps, or too many chunks generated |
 | `413` | File exceeds `MAX_FILE_SIZE_MB` |
 | `422` | Request validation error (e.g. non-numeric `chunk_size_mb`, unknown `memory_mode`, missing `file`); `detail` is a list of field errors |
 | `500` | FFmpeg could not process the audio (corrupt input, or `output_format` incompatible with the input codec), processing timed out (`FFMPEG_TIMEOUT_SECONDS`), or unexpected server error |
