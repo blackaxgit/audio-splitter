@@ -186,7 +186,7 @@ helm install audio-splitter ./helm/audio-splitter \
 | `resources.limits.cpu` | `2000m` | CPU limit per pod |
 | `ingress.enabled` | `false` | Enable ingress resource (configure TLS before enabling) |
 | `autoscaling.enabled` | `false` | Enable Horizontal Pod Autoscaler |
-| `persistence.enabled` | `false` | Mount a PVC at `persistence.mountPath` and use it as `TMPDIR` for uploads and chunks. Single replica only: the PVC is `ReadWriteOnce` |
+| `persistence.enabled` | `false` | Mount a PVC at `persistence.mountPath` and use it as `TMPDIR` for uploads and chunks. Single replica only with the default `ReadWriteOnce` access mode |
 | `networkPolicy.enabled` | `true` | Restrict pod ingress/egress with a NetworkPolicy |
 | `securityContext.readOnlyRootFilesystem` | `true` | Mount root filesystem as read-only |
 | `serviceAccount.automount` | `false` | Auto-mount Kubernetes API token |

@@ -250,7 +250,7 @@ async def readiness_check():
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
-    except FileNotFoundError:
+    except OSError:  # missing or non-executable ffmpeg
         raise HTTPException(status_code=503, detail="FFmpeg not available")
     try:
         await asyncio.wait_for(
