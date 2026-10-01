@@ -132,7 +132,7 @@ Verifies that FFmpeg is installed and accessible. Used as a readiness probe in K
 {"status": "ready"}
 ```
 
-**Response (503):** returned when FFmpeg is not found on `PATH`.
+**Response (503):** returned when FFmpeg is not found on `PATH`, is not executable, exits with an error, or does not respond within `FFPROBE_TIMEOUT_SECONDS`.
 
 ---
 

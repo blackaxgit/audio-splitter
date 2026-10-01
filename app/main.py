@@ -1,24 +1,33 @@
+import asyncio
+import base64
+import logging
 import os
 import re
-import uuid
-import logging
-import asyncio
-import tempfile
 import shutil
-import base64
-from pathlib import Path
+import tempfile
+import uuid
 from enum import Enum
-from typing import Optional
+from pathlib import Path
 
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException
-from fastapi.responses import JSONResponse
 import aiofiles
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.responses import JSONResponse
 
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Audio Splitter Service")
 
-SUPPORTED_FORMATS = {".mp3", ".wav", ".flac", ".ogg", ".m4a", ".aac", ".wma", ".opus"}
+MIME_TYPES = {
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".flac": "audio/flac",
+    ".ogg": "audio/ogg",
+    ".m4a": "audio/x-m4a",
+    ".aac": "audio/aac",
+    ".wma": "audio/x-ms-wma",
+    ".opus": "audio/opus",
+}
+SUPPORTED_FORMATS = MIME_TYPES.keys()  # a view, not a set: keeps the "Supported: ..." order stable
 MAX_FILE_SIZE = int(os.getenv("MAX_FILE_SIZE_MB", "500")) * 1024 * 1024
 FFMPEG_TIMEOUT_SECONDS = int(os.getenv("FFMPEG_TIMEOUT_SECONDS", "300"))
 FFPROBE_TIMEOUT_SECONDS = int(os.getenv("FFPROBE_TIMEOUT_SECONDS", "30"))
@@ -44,31 +53,19 @@ def get_file_extension(filename: str) -> str:
     return Path(filename).suffix.lower()
 
 
-def get_mime_type(ext: str) -> str:
-    """Get MIME type for audio extension."""
-    mime_types = {
-        ".mp3": "audio/mpeg",
-        ".wav": "audio/wav",
-        ".flac": "audio/flac",
-        ".ogg": "audio/ogg",
-        ".m4a": "audio/x-m4a",
-        ".aac": "audio/aac",
-        ".wma": "audio/x-ms-wma",
-        ".opus": "audio/opus",
-    }
-    return mime_types.get(ext, "audio/octet-stream")
-
-
-def calculate_segment_time(chunk_size_mb: float, bitrate_kbps: int = 320) -> float:
+def calculate_segment_time(chunk_size_mb: float, bitrate_kbps: int) -> float:
     """Calculate segment time in seconds based on chunk size and estimated bitrate."""
     chunk_size_bits = chunk_size_mb * 1024 * 1024 * 8
     return chunk_size_bits / (bitrate_kbps * 1000)
 
 
-async def get_audio_duration(file_path: str) -> Optional[float]:
-    """Get audio duration using ffprobe."""
+async def ffprobe_format(file_path: str, entry: str, label: str) -> bytes:
+    """Run ffprobe for one format entry; return its raw output, or b"" on timeout.
+
+    `label` names the entry in the timeout log line ("bitrate" for "bit_rate").
+    """
     proc = await asyncio.create_subprocess_exec(
-        "ffprobe", "-v", "error", "-show_entries", "format=duration",
+        "ffprobe", "-v", "error", "-show_entries", f"format={entry}",
         "-of", "default=noprint_wrappers=1:nokey=1", file_path,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE
@@ -80,34 +77,26 @@ async def get_audio_duration(file_path: str) -> Optional[float]:
     except asyncio.TimeoutError:
         proc.kill()
         await proc.wait()
-        logger.error("ffprobe duration timed out for file: %s", file_path)
-        return None
+        logger.error("ffprobe %s timed out for file: %s", label, file_path)
+        return b""
+    return stdout
+
+
+async def get_audio_duration(file_path: str) -> float:
+    """Get audio duration using ffprobe, default to 0.0 if not found."""
+    stdout = await ffprobe_format(file_path, "duration", "duration")
     try:
-        return float(stdout.decode().strip())
-    except (ValueError, AttributeError):
-        return None
+        return float(stdout.decode().strip()) or 0.0  # normalizes -0.0 to 0.0
+    except ValueError:
+        return 0.0
 
 
 async def get_audio_bitrate(file_path: str) -> int:
     """Get audio bitrate using ffprobe, default to 320kbps if not found."""
-    proc = await asyncio.create_subprocess_exec(
-        "ffprobe", "-v", "error", "-show_entries", "format=bit_rate",
-        "-of", "default=noprint_wrappers=1:nokey=1", file_path,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
-    )
-    try:
-        stdout, _ = await asyncio.wait_for(
-            proc.communicate(), timeout=FFPROBE_TIMEOUT_SECONDS
-        )
-    except asyncio.TimeoutError:
-        proc.kill()
-        await proc.wait()
-        logger.error("ffprobe bitrate timed out for file: %s", file_path)
-        return 320
+    stdout = await ffprobe_format(file_path, "bit_rate", "bitrate")
     try:
         return int(stdout.decode().strip()) // 1000
-    except (ValueError, AttributeError):
+    except ValueError:
         return 320
 
 
@@ -116,24 +105,14 @@ async def split_audio(
     output_dir: str,
     chunk_size_mb: float,
     output_prefix: str,
-    same_as_input: bool,
-    output_format: Optional[str] = None,
-    correlation_id: str = ""
+    output_ext: str,
+    correlation_id: str
 ) -> list[str]:
     """Split audio file using FFmpeg segment muxer."""
-    input_ext = get_file_extension(input_path)
-
-    if same_as_input:
-        ext = input_ext
-    elif output_format:
-        ext = f".{output_format.lstrip('.')}"
-    else:
-        ext = input_ext
-
     bitrate = await get_audio_bitrate(input_path)
     segment_time = calculate_segment_time(chunk_size_mb, bitrate)
 
-    output_pattern = os.path.join(output_dir, f"{output_prefix}_%03d{ext}")
+    output_pattern = os.path.join(output_dir, f"{output_prefix}_%03d{output_ext}")
 
     cmd = [
         "ffmpeg", "-i", input_path,
@@ -184,7 +163,6 @@ async def split_audio(
         if f.startswith(output_prefix)
     ])
 
-    verified_chunks = []
     for chunk_path in chunks:
         real_chunk = os.path.realpath(chunk_path)
         if not real_chunk.startswith(real_output_dir + os.sep):
@@ -196,36 +174,34 @@ async def split_audio(
                 status_code=500,
                 detail=f"Audio processing failed. Reference: {correlation_id}"
             )
-        verified_chunks.append(chunk_path)
 
-    if len(verified_chunks) > MAX_CHUNKS:
+    if len(chunks) > MAX_CHUNKS:
         raise HTTPException(
             status_code=400,
             detail=(
-                f"Too many chunks generated ({len(verified_chunks)}). "
+                f"Too many chunks generated ({len(chunks)}). "
                 f"Maximum allowed: {MAX_CHUNKS}. "
                 "Increase chunk_size_mb to reduce the number of chunks."
             )
         )
 
-    return verified_chunks
+    return chunks
 
 
 async def get_chunk_data(chunk_path: str, original_filename: str, original_duration: float) -> dict:
     """Get metadata and binary data for a single chunk file."""
     filename = os.path.basename(chunk_path)
     ext = get_file_extension(filename)
-    size = os.path.getsize(chunk_path)
-    mime_type = get_mime_type(ext)
 
     async with aiofiles.open(chunk_path, 'rb') as f:
         binary_data = await f.read()
+    size = len(binary_data)
 
     return {
         "data": {
             "filename": filename,
             "fileExtension": ext.lstrip('.'),
-            "mimeType": mime_type,
+            "mimeType": MIME_TYPES.get(ext, "audio/octet-stream"),
             "size": size,
             "sizeInMB": size / (1024 * 1024),
             "originalFile": original_filename,
@@ -273,7 +249,7 @@ async def split_audio_endpoint(
     chunk_size_mb: float = Form(default=10.0, description="Size of each chunk in MB"),
     output_prefix: str = Form(default="chunk", description="Prefix for chunk filenames"),
     same_as_input: bool = Form(default=True, description="Use same format as input"),
-    output_format: Optional[str] = Form(default=None, description="Output format if not same as input"),
+    output_format: str | None = Form(default=None, description="Output format if not same as input"),
     memory_mode: MemoryMode = Form(default=MemoryMode.AUTO, description="Memory management mode")
 ):
     """
@@ -302,9 +278,10 @@ async def split_audio_endpoint(
             )
         )
 
+    output_ext = ext
     if not same_as_input and output_format:
-        normalized_format = f".{output_format.lstrip('.')}"
-        if normalized_format not in SUPPORTED_FORMATS:
+        output_ext = f".{output_format.lstrip('.')}"
+        if output_ext not in SUPPORTED_FORMATS:
             raise HTTPException(
                 status_code=400,
                 detail=(
@@ -318,41 +295,33 @@ async def split_audio_endpoint(
     try:
         input_path = os.path.join(work_dir, f"input{ext}")
         output_dir = os.path.join(work_dir, "chunks")
-        os.makedirs(output_dir, exist_ok=True)
+        os.makedirs(output_dir)
 
-        # AUTO mode always streams since file size is unknown upfront
-        use_streaming = memory_mode in (MemoryMode.AUTO, MemoryMode.STREAMING)
-
-        if use_streaming:
+        too_large_detail = f"File too large. Max size: {MAX_FILE_SIZE // (1024*1024)}MB"
+        # AUTO is an alias of STREAMING
+        if memory_mode in (MemoryMode.AUTO, MemoryMode.STREAMING):
             file_size = 0
             async with aiofiles.open(input_path, 'wb') as f:
                 while content := await file.read(1024 * 1024):
                     file_size += len(content)
                     if file_size > MAX_FILE_SIZE:
-                        raise HTTPException(
-                            status_code=413,
-                            detail=f"File too large. Max size: {MAX_FILE_SIZE // (1024*1024)}MB"
-                        )
+                        raise HTTPException(status_code=413, detail=too_large_detail)
                     await f.write(content)
         else:
             content = await file.read()
             if len(content) > MAX_FILE_SIZE:
-                raise HTTPException(
-                    status_code=413,
-                    detail=f"File too large. Max size: {MAX_FILE_SIZE // (1024*1024)}MB"
-                )
+                raise HTTPException(status_code=413, detail=too_large_detail)
             async with aiofiles.open(input_path, 'wb') as f:
                 await f.write(content)
 
-        original_duration = await get_audio_duration(input_path) or 0.0
+        original_duration = await get_audio_duration(input_path)
 
         chunks = await split_audio(
             input_path=input_path,
             output_dir=output_dir,
             chunk_size_mb=chunk_size_mb,
             output_prefix=output_prefix,
-            same_as_input=same_as_input,
-            output_format=output_format,
+            output_ext=output_ext,
             correlation_id=correlation_id
         )
 
@@ -363,12 +332,10 @@ async def split_audio_endpoint(
                 detail=f"Audio processing failed. Reference: {correlation_id}"
             )
 
-        result = []
-        for chunk_path in chunks:
-            chunk_data = await get_chunk_data(chunk_path, original_filename, original_duration)
-            result.append(chunk_data)
-
-        return JSONResponse(content=result)
+        return JSONResponse(content=[
+            await get_chunk_data(chunk_path, original_filename, original_duration)
+            for chunk_path in chunks
+        ])
 
     except HTTPException:
         raise
