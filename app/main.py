@@ -244,11 +244,14 @@ async def health_check():
 @app.get("/ready")
 async def readiness_check():
     """Readiness check - verify FFmpeg is available."""
-    proc = await asyncio.create_subprocess_exec(
-        "ffmpeg", "-version",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
-    )
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "ffmpeg", "-version",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+    except OSError:  # missing or non-executable ffmpeg
+        raise HTTPException(status_code=503, detail="FFmpeg not available")
     try:
         await asyncio.wait_for(
             proc.communicate(), timeout=FFPROBE_TIMEOUT_SECONDS
@@ -290,7 +293,7 @@ async def split_audio_endpoint(
 
     output_prefix = sanitize_prefix(output_prefix)
 
-    if chunk_size_mb < CHUNK_SIZE_MB_MIN or chunk_size_mb > CHUNK_SIZE_MB_MAX:
+    if not (CHUNK_SIZE_MB_MIN <= chunk_size_mb <= CHUNK_SIZE_MB_MAX):  # also rejects NaN
         raise HTTPException(
             status_code=400,
             detail=(
@@ -354,7 +357,11 @@ async def split_audio_endpoint(
         )
 
         if not chunks:
-            raise HTTPException(status_code=500, detail="No chunks generated")
+            logger.error("No chunks generated [ref: %s]", correlation_id)
+            raise HTTPException(
+                status_code=500,
+                detail=f"Audio processing failed. Reference: {correlation_id}"
+            )
 
         result = []
         for chunk_path in chunks:

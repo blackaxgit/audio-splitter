@@ -17,10 +17,6 @@
             {
               "name": "chunk_size_mb",
               "value": "5"
-            },
-            {
-              "name": "response_mode",
-              "value": "stream"
             }
           ]
         },
@@ -32,12 +28,12 @@
         -528,
         1824
       ],
-      "id": "00000000-0000-0000-0000-000000000000",
+      "id": "00000000-0000-0000-0000-000000000001",
       "name": "HTTP Request"
     },
     {
       "parameters": {
-        "jsCode": "const items = [];\nconst input = $input.first().json;\n\n// Split by newlines to get individual JSON objects\nconst lines = input.data.split('\\n').filter(line => line.trim().length > 0);\n\nconsole.log(`Found ${lines.length} JSON objects to parse`);\n\nfor (let i = 0; i < lines.length; i++) {\n  let chunk;\n  try {\n    chunk = JSON.parse(lines[i]);\n  } catch (error) {\n    console.error(`Failed to parse line ${i}:`, error.message);\n    console.error(`Line content:`, lines[i].substring(0, 200));\n    continue;\n  }\n  \n  // Validate structure\n  if (!chunk.binary || !chunk.binary.data || !chunk.binary.data.data) {\n    console.error(`Chunk ${i} missing binary data structure`);\n    continue;\n  }\n  \n  const binaryInfo = chunk.binary.data;\n  const jsonInfo = chunk.json;\n  \n  console.log(`Processing chunk ${i}: ${jsonInfo.filename}`);\n  \n  items.push({\n    json: {\n      index: i,\n      filename: jsonInfo.filename,\n      fileExtension: jsonInfo.fileExtension,\n      mimeType: jsonInfo.mimeType,\n      size: jsonInfo.size,\n      sizeInMB: jsonInfo.sizeInMB,\n      originalFile: jsonInfo.originalFile,\n      duration: jsonInfo.duration\n    },\n    binary: {\n      data: await this.helpers.prepareBinaryData(\n        Buffer.from(binaryInfo.data, 'base64'),\n        jsonInfo.filename,\n        jsonInfo.mimeType\n      )\n    }\n  });\n}\n\nconsole.log(`Successfully created ${items.length} items with binary data`);\n\nif (items.length === 0) {\n  throw new Error('No valid chunks were processed. Check console logs for details.');\n}\n\nreturn items;"
+        "jsCode": "// POST /split returns a JSON array; the HTTP Request node emits one item per chunk:\n// { data: { filename, fileExtension, mimeType, size, sizeInMB, originalFile, duration }, binary: \"<base64>\" }\nconst results = [];\n\nfor (const [index, item] of $input.all().entries()) {\n  const { data, binary } = item.json;\n  if (!data || typeof binary !== 'string') {\n    throw new Error(`Item ${index} is not an audio-splitter chunk (expected { data, binary })`);\n  }\n\n  results.push({\n    json: { index, ...data },\n    binary: {\n      data: await this.helpers.prepareBinaryData(\n        Buffer.from(binary, 'base64'),\n        data.filename,\n        data.mimeType\n      ),\n    },\n    pairedItem: { item: index },\n  });\n}\n\nreturn results;"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -45,7 +41,7 @@
         -304,
         1824
       ],
-      "id": "00000000-0000-0000-0000-000000000000",
+      "id": "00000000-0000-0000-0000-000000000002",
       "name": "Code in JavaScript"
     },
     {
@@ -58,7 +54,7 @@
         -96,
         1824
       ],
-      "id": "00000000-0000-0000-0000-000000000000",
+      "id": "00000000-0000-0000-0000-000000000003",
       "name": "Loop Over Items"
     },
     {
@@ -70,7 +66,7 @@
         112,
         2032
       ],
-      "id": "00000000-0000-0000-0000-000000000000"
+      "id": "00000000-0000-0000-0000-000000000004"
     },
     {
       "parameters": {
@@ -93,7 +89,7 @@
         -752,
         1824
       ],
-      "id": "00000000-0000-0000-0000-000000000000",
+      "id": "00000000-0000-0000-0000-000000000005",
       "name": "On form submission",
       "webhookId": "00000000-0000-0000-0000-000000000000"
     }
