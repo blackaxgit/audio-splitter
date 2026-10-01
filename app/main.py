@@ -110,6 +110,11 @@ async def split_audio(
 ) -> list[str]:
     """Split audio file using FFmpeg segment muxer."""
     bitrate = await get_audio_bitrate(input_path)
+    if bitrate < 1:  # no real audio is under 1 kbps; segmenting would divide by zero
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported audio: bitrate is below 1 kbps"
+        )
     segment_time = calculate_segment_time(chunk_size_mb, bitrate)
 
     output_pattern = os.path.join(output_dir, f"{output_prefix}_%03d{output_ext}")
@@ -280,7 +285,7 @@ async def split_audio_endpoint(
 
     output_ext = ext
     if not same_as_input and output_format:
-        output_ext = f".{output_format.lstrip('.')}"
+        output_ext = f".{output_format.lstrip('.').lower()}"
         if output_ext not in SUPPORTED_FORMATS:
             raise HTTPException(
                 status_code=400,
