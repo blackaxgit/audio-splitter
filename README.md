@@ -1,7 +1,7 @@
 # Audio Splitter
 
 [![License: MPL 2.0](https://img.shields.io/badge/License-MPL_2.0-brightgreen.svg)](https://opensource.org/licenses/MPL-2.0)
-[![Python](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org/downloads/)
+[![Python](https://img.shields.io/badge/python-3.14-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.142.2-009688.svg)](https://fastapi.tiangolo.com)
 
 A FastAPI-based HTTP microservice that splits large audio files into smaller chunks using FFmpeg. Designed for integration with workflow automation tools such as n8n, and deployable as a Docker container or Kubernetes workload.
@@ -31,7 +31,7 @@ The service is now available at `http://localhost:8000`.
 
 ### Local Development
 
-**Prerequisites:** Python 3.13, FFmpeg installed and on `PATH`.
+**Prerequisites:** Python 3.14, FFmpeg installed and on `PATH`.
 
 ```bash
 # Create and activate a virtual environment
@@ -61,7 +61,7 @@ Splits an uploaded audio file into chunks of a specified size.
 | `chunk_size_mb` | float | `10.0` | Target size of each output chunk in MB (min: 0.1, max: 500) |
 | `output_prefix` | string | `chunk` | Filename prefix for generated chunks (alphanumeric, hyphens, underscores only) |
 | `same_as_input` | bool | `true` | Keep the same container format as the input |
-| `output_format` | string | `null` | Output container (e.g. `m4a` for AAC input, `ogg` for Opus input). Audio is copied, not re-encoded, so the container must support the input codec, otherwise the request fails with `500`. Only used when `same_as_input` is `false` |
+| `output_format` | string | `null` | Output container, case-insensitive (e.g. `m4a` for AAC input, `ogg` for Opus input). Audio is copied, not re-encoded, so the container must support the input codec, otherwise the request fails with `500`. Only used when `same_as_input` is `false` |
 | `memory_mode` | string | `auto` | Upload strategy: `auto` (same as `streaming`), `streaming` (writes the upload to disk in 1 MB chunks), or `buffered` (reads it into memory) |
 
 #### Response

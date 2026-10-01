@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  docker-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build image
+        run: docker build -t audio-splitter:ci .
+
+      - name: Start container (read-only, like the Helm chart)
+        run: |
+          docker run -d --name app --read-only \
+            --tmpfs /tmp:uid=1000,gid=1000 -e TMPDIR=/tmp \
+            --cap-drop ALL --security-opt no-new-privileges \
+            -p 8000:8000 audio-splitter:ci
+
+      - name: Smoke test
+        run: |
+          for _ in $(seq 30); do curl -sf localhost:8000/health && break; sleep 1; done
+          curl -sf localhost:8000/ready
+          docker run --rm --entrypoint ffmpeg audio-splitter:ci -v error \
+            -f lavfi -i sine=frequency=440:duration=20 -f mp3 - > tone.mp3
+          curl -sf -F file=@tone.mp3 -F chunk_size_mb=0.1 localhost:8000/split \
+            | python3 -c 'import json, sys; c = json.load(sys.stdin); assert len(c) > 1, c; print(len(c), "chunks")'
+
+      - name: Container logs
+        if: always()
+        run: docker logs app

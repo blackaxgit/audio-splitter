@@ -95,7 +95,7 @@ async def get_audio_bitrate(file_path: str) -> int:
     """Get audio bitrate using ffprobe, default to 320kbps if not found."""
     stdout = await ffprobe_format(file_path, "bit_rate", "bitrate")
     try:
-        return int(stdout.decode().strip()) // 1000
+        return int(stdout.decode().strip()) // 1000 or 320  # <1 kbps would divide by zero
     except ValueError:
         return 320
 
@@ -280,7 +280,7 @@ async def split_audio_endpoint(
 
     output_ext = ext
     if not same_as_input and output_format:
-        output_ext = f".{output_format.lstrip('.')}"
+        output_ext = f".{output_format.lstrip('.').lower()}"
         if output_ext not in SUPPORTED_FORMATS:
             raise HTTPException(
                 status_code=400,

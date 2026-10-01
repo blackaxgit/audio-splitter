@@ -2,7 +2,7 @@
 
 ## Local Development Setup
 
-**Prerequisites:** Python 3.13, FFmpeg (with `ffprobe`) installed and on `PATH`.
+**Prerequisites:** Python 3.14, FFmpeg (with `ffprobe`) installed and on `PATH`.
 
 ```bash
 # Create and activate a virtual environment
