@@ -138,11 +138,11 @@ Verifies that FFmpeg is installed and accessible. Used as a readiness probe in K
 
 ## Configuration
 
-Configuration is provided through environment variables.
+Configuration is provided through environment variables. For local runs you can copy `.env.example` to `.env` and pass `--env-file .env` to `uvicorn` or `docker run`; the app does not read `.env` on its own.
 
 | Variable | Default | Description |
 |---|---|---|
-| `MAX_FILE_SIZE_MB` | `500` | Maximum accepted upload size in MB |
+| `MAX_FILE_SIZE_MB` | `500` | Maximum accepted upload size in MB. Enforced after the upload has been received, so also cap the request body at your ingress or proxy (e.g. nginx `client_max_body_size`) |
 | `FFMPEG_TIMEOUT_SECONDS` | `300` | Maximum time in seconds for FFmpeg split operations before killing the process |
 | `FFPROBE_TIMEOUT_SECONDS` | `30` | Maximum time in seconds for ffprobe metadata queries and readiness checks |
 | `CHUNK_SIZE_MB_MIN` | `0.1` | Minimum allowed value for `chunk_size_mb` |
@@ -186,7 +186,7 @@ helm install audio-splitter ./helm/audio-splitter \
 | `resources.limits.cpu` | `2000m` | CPU limit per pod |
 | `ingress.enabled` | `false` | Enable ingress resource (configure TLS before enabling) |
 | `autoscaling.enabled` | `false` | Enable Horizontal Pod Autoscaler |
-| `persistence.enabled` | `false` | Mount a PVC at `persistence.mountPath` and use it as `TMPDIR` for uploads and chunks |
+| `persistence.enabled` | `false` | Mount a PVC at `persistence.mountPath` and use it as `TMPDIR` for uploads and chunks. Single replica only: the PVC is `ReadWriteOnce` |
 | `networkPolicy.enabled` | `true` | Restrict pod ingress/egress with a NetworkPolicy |
 | `securityContext.readOnlyRootFilesystem` | `true` | Mount root filesystem as read-only |
 | `serviceAccount.automount` | `false` | Auto-mount Kubernetes API token |

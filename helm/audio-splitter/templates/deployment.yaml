@@ -45,7 +45,7 @@ spec:
             - name: {{ $key }}
               value: {{ $value | quote }}
             {{- end }}
-            {{- if and .Values.persistence.enabled (not (hasKey .Values.env "TMPDIR")) }}
+            {{- if and .Values.persistence.enabled (not (hasKey (.Values.env | default dict) "TMPDIR")) }}
             - name: TMPDIR
               value: {{ .Values.persistence.mountPath | quote }}
             {{- end }}

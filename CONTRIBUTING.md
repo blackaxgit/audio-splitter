@@ -28,7 +28,7 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 The service is available at `http://localhost:8000`. The interactive API docs are at `http://localhost:8000/docs`.
 
-Environment variables can be set in a `.env` file or exported in your shell before starting. See `.env.example` for all options.
+Environment variables can be exported in your shell, or copied from `.env.example` into `.env` and loaded with `--env-file .env` (uvicorn does not read `.env` on its own). See `.env.example` for all options.
 
 ## Code Style
 
